@@ -1,0 +1,59 @@
+# ── Build output ──────────────────────────────────────────────────────────────
+build/
+dist/
+out/
+
+# ── Node ──────────────────────────────────────────────────────────────────────
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# ── Angular ───────────────────────────────────────────────────────────────────
+frontend/dist/
+frontend/.angular/
+frontend/.sass-cache/
+
+# ── Environment / secrets ─────────────────────────────────────────────────────
+.env
+backend/.env
+*.env.local
+
+# ── AI outputs (can be large) ─────────────────────────────────────────────────
+outputs/images/
+outputs/videos/
+outputs/chats/
+
+# ── C++ artifacts ─────────────────────────────────────────────────────────────
+*.o
+*.obj
+*.exe
+*.dll
+*.lib
+*.pdb
+*.ilk
+*.exp
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.sln
+.vs/
+
+# ── nlohmann/json (downloaded separately) ────────────────────────────────────
+third_party/nlohmann/json.hpp
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+

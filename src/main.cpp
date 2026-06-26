@@ -1,5 +1,5 @@
-// main.cpp — Local AI Assistant
-// A terminal-based chat interface that talks to local AI servers.
+// main.cpp — LocalMind Assistant
+// A terminal-based chat interface that talks to LocalMind servers.
 //
 // Commands (type at the prompt):
 //   /help           — show this list
@@ -20,6 +20,9 @@
 #include <vector>
 #include <algorithm>
 #include <filesystem>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #include "chat/ChatClient.h"
 #include "image/ImageGen.h"
@@ -130,14 +133,17 @@ int main() {
     print_banner();
 
     // ── Instantiate all modules ──────────────────────────────────────────────
-    chat::ChatClient    llm("http://localhost:11434", "llama3");
+    // Read model from environment variable (set in .env / docker-compose).
+    const char* env_model = std::getenv("OLLAMA_MODEL");
+    std::string model_name = env_model ? env_model : "mistral";
+    chat::ChatClient    llm("http://localhost:11434", model_name);
     image_gen::ImageGen img("http://localhost:7860",  "outputs/images");
     video_gen::VideoGen vid("http://localhost:8188",  "outputs/videos",
                             video_gen::BackendType::SimpleWrapper);
 
     // Default system prompt: sets personality.
     llm.set_system_prompt(
-        "You are a helpful, concise local AI assistant. "
+        "You are a helpful, concise LocalMind assistant. "
         "You run entirely offline. Answer clearly and directly."
     );
 

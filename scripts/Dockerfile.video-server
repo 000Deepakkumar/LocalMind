@@ -1,0 +1,24 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# imageio-ffmpeg needs ffmpeg binary
+RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir \
+    flask \
+    torch \
+    torchvision \
+    diffusers \
+    transformers \
+    accelerate \
+    imageio \
+    imageio-ffmpeg \
+    numpy \
+    --extra-index-url https://download.pytorch.org/whl/cpu
+
+COPY scripts/svd_server.py .
+
+EXPOSE 8765
+
+CMD ["python", "svd_server.py", "--host", "0.0.0.0", "--port", "8765"]

@@ -1,0 +1,95 @@
+version: "3.9"
+
+services:
+
+  # ── Angular UI (nginx) ────────────────────────────────────────────────────
+  ai-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: ai-frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - ai-backend
+    restart: unless-stopped
+
+  # ── Node.js API backend ───────────────────────────────────────────────────
+  ai-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: ai-backend
+    ports:
+      - "3000:3000"
+    environment:
+      - OLLAMA_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-mistral}
+      - SD_URL=http://image-server:7860
+      - VIDEO_URL=http://video-server:8765
+      - IMAGES_DIR=/outputs/images
+      - VIDEOS_DIR=/outputs/videos
+      - CHATS_DIR=/outputs/chats
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:4200,http://localhost:8080}
+    volumes:
+      - ./outputs:/outputs
+    depends_on:
+      - ollama
+      - image-server
+      - video-server
+
+    restart: unless-stopped
+
+  # ── Ollama (LLM server + auto pull model) ────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-mistral}
+    # Start server, wait for it to be ready, then pull the model if not cached.
+    entrypoint: >
+      sh -c "ollama serve &
+             sleep 5 &&
+             ollama pull $${OLLAMA_MODEL:-mistral} &&
+             wait"
+    restart: unless-stopped
+
+  # ── Stable Diffusion image server ────────────────────────────────────────
+  image-server:
+    build:
+      context: .
+      dockerfile: scripts/Dockerfile.image-server
+    container_name: image-server
+    ports:
+      - "7860:7860"
+    environment:
+      - SD_MODEL=${SD_MODEL:-runwayml/stable-diffusion-v1-5}
+      - HF_TOKEN=${HF_TOKEN:-}
+      - HF_HUB_DISABLE_SYMLINKS_WARNING=1
+    volumes:
+      - sd_models:/root/.cache/huggingface   # cache downloaded models
+    restart: unless-stopped
+
+  # ── Video generation server ───────────────────────────────────────────────
+  video-server:
+    build:
+      context: .
+      dockerfile: scripts/Dockerfile.video-server
+    container_name: video-server
+    ports:
+      - "8765:8765"
+    environment:
+      - HF_TOKEN=${HF_TOKEN:-}
+      - HF_HUB_DISABLE_SYMLINKS_WARNING=1
+    volumes:
+      - hf_cache:/root/.cache/huggingface    # cache downloaded models
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+  sd_models:
+  hf_cache:

@@ -1,135 +1,282 @@
-# Local AI Assistant (C++)
+# LocalMind Assistant
 
-A fully offline, terminal-based AI assistant that talks to local model servers.
-No cloud API keys. No internet required after setup.
+A fully offline AI assistant with a web UI. Chat with a local LLM, generate images, and generate videos — all running on your own machine. No internet required after first-time model downloads.
 
 ```
-┌─────────────────────────────────────────┐
-│            local_ai (C++20)             │
-│                                         │
-│  ┌──────────┐  ┌──────────┐  ┌───────┐ │
-│  │   Chat   │  │  Image   │  │ Video │ │
-│  │ ChatClient  │  ImageGen│  │VideoGen│
-│  └────┬─────┘  └────┬─────┘  └───┬───┘ │
-│       │             │             │     │
-│  ┌────▼─────────────▼─────────────▼───┐ │
-│  │           HttpClient (libcurl)      │ │
-│  └────────────────────────────────────┘ │
-└─────────────────────────────────────────┘
-         │              │             │
-   Ollama:11434   SD:7860      ComfyUI:8188
-   (llama3 etc)  (AUTOMATIC1111)  (SVD/AnimateDiff)
+Browser → http://localhost:8080
+              │
+         Angular UI
+              │
+         Node.js Backend (port 3000)
+              │
+    ┌─────────┼──────────┐
+    │         │          │
+ Ollama    Image       Video
+ :11434    Server      Server
+ (chat)    :7860       :8765
 ```
 
-## Prerequisites
 
-| Component | What to install |
-|-----------|----------------|
-| C++ toolchain | MSVC 2022 / GCC 13 / Clang 16 |
-| CMake | ≥ 3.16 |
-| libcurl | Dev package (`libcurl-dev` on Linux, vcpkg on Windows) |
-| nlohmann/json | See `third_party/nlohmann/README.md` |
-| **LLM server** | [Ollama](https://ollama.ai) — `ollama serve && ollama pull llama3` |
-| **Image server** | [AUTOMATIC1111 SD WebUI](https://github.com/AUTOMATIC1111/stable-diffusion-webui) — `python launch.py --api` |
-| **Video server** | [ComfyUI](https://github.com/comfyanonymous/ComfyUI) OR `python scripts/svd_server.py` |
+---
 
-## Build
+## Option A — Docker (recommended)
 
-```bash
-# 1. Grab nlohmann/json (one-time)
-curl -L -o third_party/nlohmann/json.hpp \
-  https://github.com/nlohmann/json/releases/download/v3.11.3/json.hpp
+Everything runs in one command. No need to install Node.js, Python, or anything else except Docker.
 
-# 2. Configure
-cmake -B build -DCMAKE_BUILD_TYPE=Release
+### Prerequisites
 
-# 3. Build
-cmake --build build --parallel
+| Tool | Download |
+|------|----------|
+| Docker Desktop | https://www.docker.com/products/docker-desktop |
 
-# 4. Run
-./build/bin/local_ai
-```
+### Steps
 
-### Windows (vcpkg)
+**1. Clone the repo**
 ```powershell
-vcpkg install curl:x64-windows
-cmake -B build -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
-      -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release
-.\build\bin\Release\local_ai.exe
+git clone https://github.com/your-username/AI-Modal
+cd AI-Modal
 ```
 
-## Usage
+**2. Set your HuggingFace token (optional but speeds up downloads)**
 
+Get a free token at https://huggingface.co → Settings → Access Tokens → New Token (Read permission only)
+
+Edit `.env` in the project root:
 ```
-You> Hello, what can you do?
-AI>  I can chat with you, generate images (/image), generate videos (/video),
-     save our conversation (/save), and more. Type /help for the full list.
-
-You> /image a futuristic city at night, neon lights, cyberpunk style
-  Generating image…
-  Image saved: outputs/images/20240615_143022_a_futuristic_city_at.png
-
-You> /video a red balloon floating over a meadow
-  Generating video (this can take several minutes)…
-  Video saved: outputs/videos/20240615_143155_a_red_balloon_floating.mp4
-
-You> /save
-  Saved: outputs/chats/20240615_143200_chat.txt
-
-You> /quit
-Goodbye!
+OLLAMA_MODEL=mistral
+HF_TOKEN=hf_your_token_here
 ```
 
-## Project structure
+**3. Start everything**
+```powershell
+docker compose up --build
+```
+
+First run downloads:
+- Ollama + mistral model (~4GB)
+- Stable Diffusion model (~4GB) — downloads on first image generation
+- ModelScope video model (~3.5GB) — downloads on first video generation
+
+**4. Open the UI**
+
+Go to http://localhost:8080 in your browser.
+
+### Ports
+
+| Service | URL |
+|---------|-----|
+| Web UI | http://localhost:8080 |
+| Backend API | http://localhost:3000 |
+| Ollama | http://localhost:11434 |
+| Image server | http://localhost:7860 |
+| Video server | http://localhost:8765 |
+
+### Common commands
+
+```powershell
+# Start
+docker compose up --build
+
+# Stop
+docker compose down
+
+# Start again without rebuilding (faster)
+docker compose up
+
+# View logs
+docker logs ai-backend -f
+docker logs image-server -f
+docker logs video-server -f
+
+# Pull a different LLM model
+docker exec -it ollama ollama pull llama3
+
+# Rebuild one service only
+docker compose up --build image-server
+```
+
+### Change the LLM model
+
+Edit `.env`:
+```
+OLLAMA_MODEL=llama3
+```
+Then restart:
+```powershell
+docker compose down
+docker compose up
+```
+
+Available models (pick based on your RAM):
+
+| Model | RAM needed | Quality |
+|-------|-----------|---------|
+| mistral | 8GB | Good |
+| llama3 | 8GB | Great |
+| gemma3:4b | 4GB | Fast |
+| phi4 | 10GB | Excellent |
+| deepseek-r1 | 8GB | Best for reasoning |
+
+---
+
+## Option B — Run Locally (no Docker)
+
+### Prerequisites
+
+| Tool | Download |
+|------|----------|
+| Node.js (LTS) | https://nodejs.org |
+| Python 3.10+ | https://www.python.org |
+| Ollama | https://ollama.com/download |
+
+### Steps
+
+**1. Install Python dependencies**
+```powershell
+pip install flask diffusers accelerate torch torchvision transformers imageio imageio-ffmpeg
+```
+
+**2. Open 5 terminal windows and run one command in each:**
+
+**Terminal 1 — LLM server**
+```powershell
+ollama serve
+```
+First time only — pull a model:
+```powershell
+ollama pull mistral
+```
+
+**Terminal 2 — Image server**
+```powershell
+cd "C:\path\to\AI-Modal"
+python scripts/image_server.py
+```
+Downloads SD model (~4GB) on first run.
+
+**Terminal 3 — Video server**
+```powershell
+cd "C:\path\to\AI-Modal"
+python scripts/svd_server.py
+```
+Downloads ModelScope model (~3.5GB) on first run.
+
+**Terminal 4 — Backend API**
+```powershell
+cd "C:\path\to\AI-Modal\backend"
+npm install
+node server.js
+```
+
+**Terminal 5 — Frontend**
+```powershell
+cd "C:\path\to\AI-Modal\frontend"
+npm install
+npm start
+```
+
+**3. Open the UI**
+
+Go to http://localhost:4200 in your browser.
+
+---
+
+## Features
+
+### Chat
+- Multi-turn conversation with any Ollama model
+- Streaming responses (token by token)
+- Session history persists through page refresh
+- Save chat as JSON or TXT
+- Switch models via Settings page
+
+### Image Generation
+- Text to image via Stable Diffusion
+- Configurable width, height, steps, CFG scale
+- Shows download progress on first run
+- Generated images persist through page refresh
+- Click image to open full size
+
+### Video Generation
+- Text to video via ModelScope (1.7B — works on 4GB GPU)
+- Configurable frames and FPS
+- Videos persist through page refresh
+
+### Settings
+- Switch LLM model
+- View server status
+- Quick reference commands
+
+---
+
+## Project Structure
 
 ```
-local-ai-assistant/
-├── CMakeLists.txt
-├── README.md
+AI-Modal/
+├── docker-compose.yml          # All services in one file
+├── Dockerfile.frontend         # Angular → nginx
+├── Dockerfile.backend          # Node.js API
+├── nginx.conf                  # Proxy /api/ to backend
+├── .env                        # OLLAMA_MODEL, HF_TOKEN
+│
+├── frontend/                   # Angular 17 web UI
+│   └── src/app/
+│       ├── app.component.ts    # Shell + sidebar + server status
+│       ├── services/
+│       │   └── ai.service.ts   # API calls to backend
+│       └── pages/
+│           ├── chat/           # Chat interface
+│           ├── image/          # Image generation
+│           ├── video/          # Video generation
+│           └── settings/       # Model + server config
+│
+├── backend/                    # Node.js Express API
+│   ├── server.js               # Routes: /api/chat, /image, /video
+│   └── .env                    # Local server URLs
+│
 ├── scripts/
-│   └── svd_server.py         # Optional Python SVD wrapper
-├── src/
-│   ├── main.cpp              # CLI REPL, command dispatch
+│   ├── image_server.py         # Flask + Stable Diffusion
+│   ├── svd_server.py           # Flask + ModelScope video
+│   ├── Dockerfile.image-server
+│   └── Dockerfile.video-server
+│
+├── src/                        # Original C++ CLI (optional)
+│   ├── main.cpp
 │   ├── chat/
-│   │   ├── ChatClient.h/.cpp # Multi-turn LLM conversation
 │   ├── image/
-│   │   ├── ImageGen.h/.cpp   # Stable Diffusion image generation
 │   ├── video/
-│   │   ├── VideoGen.h/.cpp   # SVD / ComfyUI video generation
 │   ├── fileio/
-│   │   ├── FileIO.h/.cpp     # Save/load chat history
 │   └── http/
-│       ├── HttpClient.h/.cpp # libcurl RAII wrapper
-├── third_party/
-│   └── nlohmann/
-│       └── json.hpp          # (download separately — see above)
-└── outputs/
-    ├── chats/                # .txt and .json chat logs
-    ├── images/               # .png generated images
-    └── videos/               # .mp4 generated videos
+│
+└── outputs/                    # Saved files
+    ├── chats/                  # .json and .txt chat logs
+    ├── images/                 # .png generated images
+    └── videos/                 # .mp4 generated videos
 ```
 
-## Switching backends
+---
 
-### llama.cpp server instead of Ollama
-```cpp
-// In main.cpp, change:
-chat::ChatClient llm("http://localhost:8080", "llama-3-8b",
-                     "/v1/chat/completions");   // OpenAI-compatible path
-```
+## Hardware Requirements
 
-### ComfyUI for video
-```cpp
-video_gen::VideoGen vid("http://localhost:8188", "outputs/videos",
-                        video_gen::BackendType::ComfyUI);
-```
+| Component | Minimum | Recommended |
+|-----------|---------|-------------|
+| RAM | 16GB | 32GB |
+| GPU VRAM | 4GB | 8GB+ |
+| Disk space | 20GB free | 40GB free |
+| OS | Windows 10/11, Linux, macOS | |
 
-### Standalone SVD server
-```bash
-python scripts/svd_server.py --port 8765
-```
-```cpp
-video_gen::VideoGen vid("http://localhost:8765", "outputs/videos",
-                        video_gen::BackendType::SimpleWrapper);
-```
+> Your setup: 28GB RAM + 4GB GPU — chat and image generation work well. Video generation works but is slow on CPU if VRAM is insufficient.
+
+---
+
+## Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| Generate button disabled | Image server is still downloading the model — wait for it |
+| Chat not working | Run `docker logs ollama` — model may still be pulling |
+| Image generation fails | Check `docker logs image-server` for errors |
+| Video generation fails | Check `docker logs video-server` — model may still be downloading |
+| Port already in use | Run `docker compose down` then `docker compose up` again |
+| Out of memory | Switch to a smaller model: `OLLAMA_MODEL=gemma3:4b` in `.env` |
+| Slow downloads | Add `HF_TOKEN` to `.env` to remove HuggingFace rate limits |
