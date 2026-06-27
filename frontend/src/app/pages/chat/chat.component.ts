@@ -1,7 +1,9 @@
 import { Component, ElementRef, ViewChild, AfterViewChecked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { AiService, ChatMessage } from '../../services/ai.service';
+import { AuthService } from '../../services/auth.service';
 import { ICONS } from '../../shared/icons';
 import { SafeHtmlPipe } from '../../shared/safe-html.pipe';
 
@@ -21,12 +23,32 @@ const STORAGE_KEY = 'chat_history';
           <div class="text-dim text-sm">Multi-turn conversation with your local LLM</div>
         </div>
         <div class="flex gap-2">
-          <button class="btn btn-ghost icon-btn" (click)="saveChat()" [disabled]="messages.length === 0" title="Save chat">
-            <span [innerHTML]="icons.save | safeHtml"></span> Save
-          </button>
+          @if (isLoggedIn && savedIndicator) {
+            <span class="saved-badge">✓ Saved</span>
+          }
+          @if (!isLoggedIn) {
+            <button class="btn btn-ghost icon-btn" (click)="saveChat()" [disabled]="messages.length === 0" title="Save chat">
+              <span [innerHTML]="icons.save | safeHtml"></span> Save
+            </button>
+          }
           <button class="btn btn-danger icon-btn" (click)="clearChat()" [disabled]="messages.length === 0" title="Clear chat">
             <span [innerHTML]="icons.trash | safeHtml"></span> Clear
           </button>
+
+          @if (!isLoggedIn) {
+            <button class="btn btn-primary icon-btn" (click)="goLogin()" title="Sign in">
+              <span [innerHTML]="icons.login | safeHtml"></span>
+              Sign in
+            </button>
+          } @else {
+            <div class="user-chip">
+              @if (currentUser?.picture) {
+                <img class="chip-avatar" [src]="currentUser!.picture" [alt]="currentUser!.name" referrerpolicy="no-referrer">
+              }
+              <span class="chip-name">{{ currentUser?.name }}</span>
+              <button class="chip-logout" (click)="logout()" title="Sign out">⏻</button>
+            </div>
+          }
         </div>
       </div>
 
@@ -225,6 +247,43 @@ const STORAGE_KEY = 'chat_history';
     }
     .icon-btn { display: flex; align-items: center; gap: 6px; }
     .icon-btn span { display: flex; align-items: center; }
+    .saved-badge { font-size: 12px; color: #34d399; font-weight: 500; }
+
+    .user-chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--page-surface2, rgba(255,255,255,0.06));
+      border: 1px solid var(--page-card-border, rgba(255,255,255,0.1));
+      border-radius: 20px;
+      padding: 4px 10px 4px 4px;
+    }
+    .chip-avatar {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+    .chip-name {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text, #e2e8f0);
+      max-width: 100px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .chip-logout {
+      background: none;
+      border: none;
+      color: var(--text-dim, #64748b);
+      cursor: pointer;
+      font-size: 13px;
+      padding: 2px;
+      line-height: 1;
+      border-radius: 50%;
+    }
+    .chip-logout:hover { color: #f87171; }
 
     /* ── Responsive ── */
     @media (max-width: 600px) {
@@ -252,11 +311,15 @@ export class ChatComponent implements AfterViewChecked {
   icons = ICONS;
 
   messages: ChatMessage[] = [];
-  userInput    = '';
-  streaming    = false;
-  streamBuffer = '';
+  userInput      = '';
+  streaming      = false;
+  streamBuffer   = '';
+  savedIndicator = false;
 
-  constructor(private ai: AiService) {
+  get isLoggedIn()   { return this.auth.isAuthenticated; }
+  get currentUser()  { return this.auth.currentUser; }
+
+  constructor(private ai: AiService, private auth: AuthService, private router: Router) {
     // Restore chat history from sessionStorage on load.
     try {
       const saved = sessionStorage.getItem(STORAGE_KEY);
@@ -313,6 +376,7 @@ export class ChatComponent implements AfterViewChecked {
           this.persist();
           this.streamBuffer = '';
           this.streaming    = false;
+          if (this.auth.isAuthenticated) this.autoSave();
           break;
         }
       }
@@ -330,6 +394,19 @@ export class ChatComponent implements AfterViewChecked {
     this.messages = [];
     sessionStorage.removeItem(STORAGE_KEY);
   }
+
+  private autoSave() {
+    this.ai.saveChat(this.messages).subscribe({
+      next: () => {
+        this.savedIndicator = true;
+        setTimeout(() => this.savedIndicator = false, 2500);
+      },
+      error: () => {},
+    });
+  }
+
+  goLogin()  { this.router.navigate(['/login']); }
+  logout()   { this.auth.logout(); }
 
   saveChat() {
     this.ai.saveChat(this.messages).subscribe({

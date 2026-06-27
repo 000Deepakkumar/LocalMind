@@ -112,4 +112,12 @@ export class AiService {
   saveChat(messages: ChatMessage[]): Observable<{ success: boolean; filename: string }> {
     return this.http.post<any>(`${this.base}/api/chat/save`, { messages });
   }
+
+  getImages(): Observable<{ images: any[] }> {
+    return this.http.get<any>(`${this.base}/api/images`);
+  }
+
+  getVideos(): Observable<{ videos: any[] }> {
+    return this.http.get<any>(`${this.base}/api/videos`);
+  }
 }

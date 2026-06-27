@@ -2,6 +2,8 @@ import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AiService } from '../../services/ai.service';
+import { AuthService } from '../../services/auth.service';
+import { GenerationService } from '../../services/generation.service';
 import { ICONS } from '../../shared/icons';
 import { SafeHtmlPipe } from '../../shared/safe-html.pipe';
 
@@ -23,6 +25,15 @@ interface GeneratedImage {
           <div class="page-title">Image Generation</div>
           <div class="text-dim text-sm">Create images using Stable Diffusion locally</div>
         </div>
+        @if (auth.isAuthenticated) {
+          <div class="user-chip">
+            @if (auth.currentUser?.picture) {
+              <img class="chip-avatar" [src]="auth.currentUser!.picture" [alt]="auth.currentUser!.name" referrerpolicy="no-referrer">
+            }
+            <span class="chip-name">{{ auth.currentUser?.name }}</span>
+            <button class="chip-logout" (click)="auth.logout()" title="Sign out">⏻</button>
+          </div>
+        }
       </div>
 
       <div class="page-body">
@@ -70,7 +81,7 @@ interface GeneratedImage {
           </div>
 
           <!-- Model status bar -->
-          @if (modelState !== 'ready' && modelState !== 'unknown') {
+          @if (!loading && modelState !== 'ready' && modelState !== 'unknown') {
             <div class="model-status-box">
               <div class="model-status-top">
                 <span class="model-status-label">
@@ -86,18 +97,30 @@ interface GeneratedImage {
               <div class="model-status-msg">{{ modelMessage }}</div>
             </div>
           }
-          @if (modelState === 'ready') {
+          @if (!loading && modelState === 'ready') {
             <div class="model-ready-box">✓ Model ready</div>
           }
           @if (modelState === 'unknown') {
             <div class="model-unknown-box">⚠ Image server not running</div>
           }
 
+          @if (loading) {
+            <div class="gen-progress-box">
+              <div class="gen-progress-top">
+                <span class="gen-progress-label">{{ genMessage || 'Generating…' }}</span>
+                <span class="gen-progress-pct">{{ genProgress }}%</span>
+              </div>
+              <div class="progress-track">
+                <div class="progress-fill" [style.width.%]="genProgress"></div>
+              </div>
+            </div>
+          }
+
           <button class="btn btn-primary generate-btn"
             (click)="generate()" [disabled]="!prompt.trim() || loading || modelState !== 'ready'">
             @if (loading) {
               <div class="spinner"></div>
-              <span>Generating…</span>
+              <span>Generating… {{ genProgress }}%</span>
             } @else {
               <span [innerHTML]="icons.sparkles | safeHtml"></span>
               <span>Generate Image</span>
@@ -111,6 +134,10 @@ interface GeneratedImage {
 
         <!-- Gallery -->
         @if (images.length > 0) {
+          <div class="gallery-header">
+            <span class="section-label">{{ auth.isAuthenticated ? 'Your Images' : 'Generated' }}</span>
+            <span class="text-dim text-sm">{{ images.length }} image{{ images.length !== 1 ? 's' : '' }}</span>
+          </div>
           <div class="gallery">
             @for (img of images; track img.url) {
               <div class="gallery-item fade-in">
@@ -126,6 +153,13 @@ interface GeneratedImage {
     </div>
   `,
   styles: [`
+    .page-header { display: flex; align-items: center; justify-content: space-between; }
+    .user-chip { display: flex; align-items: center; gap: 6px; background: var(--page-surface2, rgba(255,255,255,0.06)); border: 1px solid var(--page-card-border, rgba(255,255,255,0.1)); border-radius: 20px; padding: 4px 10px 4px 4px; }
+    .chip-avatar { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; }
+    .chip-name { font-size: 12px; font-weight: 500; color: var(--text, #e2e8f0); max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chip-logout { background: none; border: none; color: var(--text-dim, #64748b); cursor: pointer; font-size: 13px; padding: 2px; line-height: 1; border-radius: 50%; }
+    .chip-logout:hover { color: #f87171; }
+
     .controls { display: flex; flex-direction: column; gap: 14px; }
 
     .field { display: flex; flex-direction: column; gap: 6px; }
@@ -166,6 +200,19 @@ interface GeneratedImage {
       border-radius: 3px;
       transition: width 0.4s ease;
     }
+
+    .gen-progress-box {
+      background: var(--page-glow);
+      border: 1px solid var(--page-accent);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .gen-progress-top { display: flex; justify-content: space-between; align-items: center; }
+    .gen-progress-label { font-size: 12px; color: var(--page-accent2); font-weight: 500; }
+    .gen-progress-pct   { font-size: 13px; color: var(--page-accent); font-weight: 700; }
 
     .model-ready-box {
       background: rgba(52,211,153,0.1);
@@ -218,6 +265,8 @@ interface GeneratedImage {
       display: block;
     }
 
+    .gallery-header { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; }
+    .section-label  { font-size: 13px; font-weight: 600; color: var(--text); }
     .gallery-caption {
       padding: 8px 10px 2px;
       font-size: 12px;
@@ -239,12 +288,18 @@ export class ImageComponent implements OnInit, OnDestroy {
   images: GeneratedImage[] = [];
 
   // Model download/load progress
-  modelState    = 'unknown';   // idle | downloading | loading | ready | unknown
+  modelState    = 'unknown';   // idle | downloading | loading | ready | generating | unknown
   modelProgress = 0;
   modelMessage  = '';
-  private pollTimer: any;
 
-  constructor(private ai: AiService) {
+  // Generation step progress
+  genProgress = 0;
+  genMessage  = '';
+
+  private pollTimer: any;
+  private genPollTimer: any;
+
+  constructor(private ai: AiService, public auth: AuthService, private gen: GenerationService) {
     try {
       const saved = sessionStorage.getItem('image_gallery');
       if (saved) this.images = JSON.parse(saved);
@@ -253,14 +308,46 @@ export class ImageComponent implements OnInit, OnDestroy {
 
   ngOnInit() {
     this.pollModelStatus();
-    // Poll every 3 seconds while not ready.
     this.pollTimer = setInterval(() => {
       if (this.modelState !== 'ready') this.pollModelStatus();
     }, 3000);
+    if (this.auth.isAuthenticated) this.loadHistory();
+  }
+
+  loadHistory() {
+    this.ai.getImages().subscribe({
+      next: ({ images }) => {
+        const fromDb: GeneratedImage[] = images.map(img => ({
+          url: img.url,
+          prompt: img.prompt,
+          timestamp: new Date(img.createdAt).toLocaleString(),
+        }));
+        const seen = new Set<string>();
+        this.images = [...this.images, ...fromDb].filter(i => {
+          const key = i.url.split('/').pop()!;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      },
+      error: () => {},
+    });
   }
 
   ngOnDestroy() {
     clearInterval(this.pollTimer);
+    clearInterval(this.genPollTimer);
+  }
+
+  private startGenPoll() {
+    this.genPollTimer = setInterval(() => this.pollModelStatus(), 800);
+  }
+
+  private stopGenPoll() {
+    if (this.genPollTimer) {
+      clearInterval(this.genPollTimer);
+      this.genPollTimer = null;
+    }
   }
 
   pollModelStatus() {
@@ -272,6 +359,10 @@ export class ImageComponent implements OnInit, OnDestroy {
         this.modelState    = d.state    || 'unknown';
         this.modelProgress = d.progress || 0;
         this.modelMessage  = d.message  || '';
+        if (d.state === 'generating') {
+          this.genProgress = d.progress || 0;
+          this.genMessage  = d.message  || '';
+        }
       })
       .catch(() => {
         this.modelState   = 'unknown';
@@ -287,8 +378,12 @@ export class ImageComponent implements OnInit, OnDestroy {
 
   generate() {
     if (!this.prompt.trim() || this.loading) return;
-    this.loading = true;
-    this.error   = '';
+    this.loading     = true;
+    this.error       = '';
+    this.genProgress = 0;
+    this.genMessage  = 'Starting generation…';
+    const jobId = this.gen.start('image', this.prompt);
+    this.startGenPoll();
 
     this.ai.generateImage({
       prompt:          this.prompt,
@@ -299,6 +394,7 @@ export class ImageComponent implements OnInit, OnDestroy {
       cfg_scale:       this.cfgScale,
     }).subscribe({
       next: r => {
+        this.stopGenPoll();
         if (r.success) {
           this.images.unshift({
             url:       r.url,
@@ -306,14 +402,20 @@ export class ImageComponent implements OnInit, OnDestroy {
             timestamp: new Date().toLocaleTimeString()
           });
           sessionStorage.setItem('image_gallery', JSON.stringify(this.images));
+          this.gen.finish(jobId);
         } else {
           this.error = r.error || 'Generation failed';
+          this.gen.fail(jobId);
         }
         this.loading = false;
+        this.genProgress = 0;
       },
       error: e => {
-        this.error   = e.error?.error || e.message || 'Server unreachable';
-        this.loading = false;
+        this.stopGenPoll();
+        this.error       = e.error?.error || e.message || 'Server unreachable';
+        this.loading     = false;
+        this.genProgress = 0;
+        this.gen.fail(jobId);
       }
     });
   }

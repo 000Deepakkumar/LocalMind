@@ -133,6 +133,16 @@ def txt2img():
         if seed != -1:
             generator = torch.Generator().manual_seed(seed)
 
+        server_state["state"]    = "generating"
+        server_state["progress"] = 0
+        server_state["message"]  = f"Generating image (0/{steps} steps)..."
+
+        def step_callback(pipe, step, timestep, kwargs):
+            pct = int((step + 1) / steps * 100)
+            server_state["progress"] = pct
+            server_state["message"]  = f"Generating image ({step + 1}/{steps} steps)..."
+            return kwargs
+
         result = pipe(
             prompt=prompt,
             negative_prompt=negative_prompt,
@@ -142,7 +152,12 @@ def txt2img():
             guidance_scale=cfg_scale,
             generator=generator,
             num_images_per_prompt=1,
+            callback_on_step_end=step_callback,
         )
+
+        server_state["state"]    = "ready"
+        server_state["progress"] = 100
+        server_state["message"]  = "Model ready!"
 
         image = result.images[0]
 

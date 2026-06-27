@@ -19,6 +19,7 @@ frontend/.sass-cache/
 .env
 backend/.env
 *.env.local
+frontend/src/assets/config.js
 
 # ── AI outputs (can be large) ─────────────────────────────────────────────────
 outputs/images/

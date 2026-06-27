@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
 
   # ── Angular UI (nginx) ────────────────────────────────────────────────────
@@ -31,13 +29,54 @@ services:
       - VIDEOS_DIR=/outputs/videos
       - CHATS_DIR=/outputs/chats
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:4200,http://localhost:8080}
+      # MongoDB
+      - MONGODB_URI=mongodb://mongodb:27017/localmind
+      # MinIO
+      - MINIO_ENDPOINT=minio
+      - MINIO_PORT=9000
+      - MINIO_USE_SSL=false
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
+      - MINIO_BUCKET_IMAGES=localmind-images
+      - MINIO_BUCKET_VIDEOS=localmind-videos
+      - MINIO_BUCKET_CHATS=localmind-chats
+      # Google OAuth
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      # JWT
+      - JWT_SECRET=${JWT_SECRET:-localmind-secret-change-in-prod}
     volumes:
       - ./outputs:/outputs
     depends_on:
       - ollama
       - image-server
       - video-server
+      - mongodb
+      - minio
+    restart: unless-stopped
 
+  # ── MongoDB ───────────────────────────────────────────────────────────────
+  mongodb:
+    image: mongo:7
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+
+  # ── MinIO (S3-compatible object storage) ──────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    ports:
+      - "9000:9000"   # API
+      - "9001:9001"   # Web console
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY:-minioadmin}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
     restart: unless-stopped
 
   # ── Ollama (LLM server + auto pull model) ────────────────────────────────
@@ -50,7 +89,6 @@ services:
       - ollama_data:/root/.ollama
     environment:
       - OLLAMA_MODEL=${OLLAMA_MODEL:-mistral}
-    # Start server, wait for it to be ready, then pull the model if not cached.
     entrypoint: >
       sh -c "ollama serve &
              sleep 5 &&
@@ -71,7 +109,7 @@ services:
       - HF_TOKEN=${HF_TOKEN:-}
       - HF_HUB_DISABLE_SYMLINKS_WARNING=1
     volumes:
-      - sd_models:/root/.cache/huggingface   # cache downloaded models
+      - sd_models:/root/.cache/huggingface
     restart: unless-stopped
 
   # ── Video generation server ───────────────────────────────────────────────
@@ -86,10 +124,12 @@ services:
       - HF_TOKEN=${HF_TOKEN:-}
       - HF_HUB_DISABLE_SYMLINKS_WARNING=1
     volumes:
-      - hf_cache:/root/.cache/huggingface    # cache downloaded models
+      - hf_cache:/root/.cache/huggingface
     restart: unless-stopped
 
 volumes:
   ollama_data:
   sd_models:
   hf_cache:
+  mongo_data:
+  minio_data:

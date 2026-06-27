@@ -3,6 +3,9 @@ import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } fro
 import { CommonModule } from '@angular/common';
 import { filter } from 'rxjs/operators';
 import { AiService, StatusResponse } from './services/ai.service';
+import { AuthService, AuthUser } from './services/auth.service';
+import { GenerationService, GenerationJob } from './services/generation.service';
+
 import { ICONS } from './shared/icons';
 import { SafeHtmlPipe } from './shared/safe-html.pipe';
 
@@ -109,6 +112,44 @@ interface ModelStatus {
           </div>
         </div>
 
+        <!-- Active generation jobs -->
+        @for (job of activeJobs; track job.id) {
+          <div class="job-card" [class.job-done]="job.status === 'done'" [class.job-error]="job.status === 'error'">
+            <div class="job-row">
+              <span class="job-icon">
+                @if (job.status === 'generating') { <span class="job-spinner"></span> }
+                @if (job.status === 'done')       { ✓ }
+                @if (job.status === 'error')      { ✗ }
+              </span>
+              <div class="job-info">
+                <div class="job-label">
+                  {{ job.status === 'generating' ? 'Generating' : job.status === 'done' ? 'Done' : 'Failed' }} · {{ job.type }}
+                </div>
+                <div class="job-prompt">{{ job.prompt }}</div>
+              </div>
+            </div>
+          </div>
+        }
+
+        <!-- User profile — pinned to bottom -->
+        @if (currentUser) {
+          <div class="user-panel">
+            <div class="user-identity">
+              @if (currentUser.picture) {
+                <img class="user-avatar" [src]="currentUser.picture" [alt]="currentUser.name" referrerpolicy="no-referrer">
+              }
+              <div class="user-info">
+                <div class="user-name">{{ currentUser.name }}</div>
+                <div class="user-email">{{ currentUser.email }}</div>
+              </div>
+            </div>
+            <button class="logout-btn" (click)="logout()">
+              <span class="logout-icon" [innerHTML]="icons.logout | safeHtml"></span>
+              <span class="logout-label">Sign out</span>
+            </button>
+          </div>
+        }
+
       </nav>
 
       <!-- Main content -->
@@ -162,8 +203,13 @@ interface ModelStatus {
     .sidebar.collapsed { width: 60px; }
     .sidebar.collapsed .nav-label,
     .sidebar.collapsed .logo-text,
-    .sidebar.collapsed .side-panels { display: none; }
+    .sidebar.collapsed .side-panels,
+    .sidebar.collapsed .job-card,
+    .sidebar.collapsed .user-info,
+    .sidebar.collapsed .logout-btn { display: none; }
     .sidebar.collapsed .nav-item { justify-content: center; padding: 9px 0; }
+    .sidebar.collapsed .user-panel { justify-content: center; padding: 8px 6px; }
+    .sidebar.collapsed .user-identity { justify-content: center; }
 
     .logo {
       display: flex;
@@ -199,6 +245,117 @@ interface ModelStatus {
     .nav-image.active   { background: rgba(236,72,153,0.15);  color: #f472b6; }
     .nav-video.active   { background: rgba(245,158,11,0.15);  color: #fbbf24; }
     .nav-settings.active{ background: rgba(124,106,247,0.15); color: #a78bfa; }
+
+    .user-panel {
+      margin-top: auto;
+      flex-shrink: 0;
+      background: var(--page-surface2);
+      border: 1px solid var(--page-card-border);
+      border-radius: var(--radius-sm);
+      padding: 8px 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .user-identity {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .user-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 4px;
+      flex-shrink: 0;
+      object-fit: cover;
+    }
+    .user-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .user-name {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.4;
+    }
+    .user-email {
+      font-size: 10px;
+      color: var(--text-dim);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.3;
+    }
+    .logout-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      border: 1px solid var(--page-card-border);
+      background: transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+      padding: 0;
+    }
+    .logout-btn:hover {
+      background: rgba(248,113,113,0.1);
+      border-color: rgba(248,113,113,0.3);
+      color: #f87171;
+    }
+    .logout-icon {
+      display: flex;
+      align-items: center;
+    }
+    .logout-label { display: none; }
+
+    .job-card {
+      background: var(--page-surface2);
+      border: 1px solid var(--page-card-border);
+      border-radius: var(--radius-sm);
+      padding: 10px 10px;
+      transition: border-color 0.3s;
+    }
+    .job-done  { border-color: rgba(52,211,153,0.4); }
+    .job-error { border-color: rgba(248,113,113,0.4); }
+    .job-row { display: flex; align-items: flex-start; gap: 8px; }
+    .job-icon {
+      font-size: 13px;
+      font-weight: 700;
+      flex-shrink: 0;
+      padding-top: 1px;
+      color: var(--text-dim);
+    }
+    .job-done  .job-icon { color: #34d399; }
+    .job-error .job-icon { color: #f87171; }
+    .job-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .job-label { font-size: 11px; font-weight: 600; color: var(--text); text-transform: capitalize; }
+    .job-prompt { font-size: 10px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    @keyframes job-spin { to { transform: rotate(360deg); } }
+    .job-spinner {
+      display: inline-block;
+      width: 11px; height: 11px;
+      border: 1.5px solid var(--page-card-border);
+      border-top-color: var(--page-accent);
+      border-radius: 50%;
+      animation: job-spin 0.7s linear infinite;
+      vertical-align: middle;
+    }
 
     .side-panels { display: flex; flex-direction: column; gap: 8px; }
 
@@ -300,10 +457,14 @@ export class AppComponent implements OnInit {
   imageStatus: ModelStatus | null = null;
   videoStatus: ModelStatus | null = null;
   sidebarCollapsed = false;
+  currentUser: AuthUser | null = null;
+  activeJobs: GenerationJob[] = [];
 
-  constructor(private ai: AiService, private router: Router) {}
+  constructor(private ai: AiService, private router: Router, private auth: AuthService, private gen: GenerationService) {}
 
   ngOnInit() {
+    this.auth.user$.subscribe(u => this.currentUser = u);
+    this.gen.jobs$.subscribe(j => this.activeJobs = j);
     this.refreshStatus();
     this.refreshModelStatuses();
     setInterval(() => this.refreshStatus(), 15000);
@@ -323,6 +484,10 @@ export class AppComponent implements OnInit {
 
   toggleSidebar() {
     this.sidebarCollapsed = !this.sidebarCollapsed;
+  }
+
+  logout() {
+    this.auth.logout();
   }
 
   refreshStatus() {

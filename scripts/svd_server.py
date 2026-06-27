@@ -126,11 +126,27 @@ def generate():
 
         print(f"[video_server] Generating: {prompt}")
 
+        num_steps = 25
+        server_state["state"]    = "generating"
+        server_state["progress"] = 0
+        server_state["message"]  = f"Generating video (0/{num_steps} steps)..."
+
+        def step_callback(pipe, step, timestep, kwargs):
+            pct = int((step + 1) / num_steps * 100)
+            server_state["progress"] = pct
+            server_state["message"]  = f"Generating video ({step + 1}/{num_steps} steps)..."
+            return kwargs
+
         result = p(
             prompt,
-            num_inference_steps=25,
+            num_inference_steps=num_steps,
             num_frames=num_frames,
+            callback_on_step_end=step_callback,
         )
+
+        server_state["state"]    = "ready"
+        server_state["progress"] = 100
+        server_state["message"]  = "Model ready!"
 
         frames = result.frames[0]
 
